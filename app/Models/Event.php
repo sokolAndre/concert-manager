@@ -20,6 +20,8 @@ class Event extends Model
         'location',
         'status',
         'notes',
+        'venue_id',
+        'contact_id'
     ];
 
     protected function casts(): array
@@ -40,5 +42,15 @@ class Event extends Model
     public function concertDetails(): HasOne
     {
         return $this->hasOne(ConcertDetails::class);
+    }
+
+    public function venue(): BelongsTo
+    {
+        return $this->belongsTo(Venue::class);
+    }
+
+    public function contact(): BelongsTo
+    {
+        return $this->belongsTo(Contact::class);
     }
 }
