@@ -25,4 +25,9 @@ class Project extends Model
     {
         return $this->hasMany(Event::class);
     }
+
+    public function setlists(): HasMany
+    {
+        return $this->hasMany(Setlist::class);
+    }
 }

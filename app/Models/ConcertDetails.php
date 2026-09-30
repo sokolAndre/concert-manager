@@ -6,6 +6,7 @@ use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\HasMany;
 use App\Enums\PaymentStatus;
+use Illuminate\Database\Eloquent\Relations\HasOne;
 
 class ConcertDetails extends Model
 {
@@ -32,6 +33,11 @@ class ConcertDetails extends Model
     public function payments(): HasMany
     {
         return $this->hasMany(Payment::class);
+    }
+
+    public function setlist(): HasOne
+    {
+        return $this->hasOne(Setlist::class);
     }
 
     public function paidAmount(): string
