@@ -23,9 +23,9 @@ services:
     db:
         image: postgres:17-alpine
         environment:
-            POSTGRES_DB: concert_manager
-            POSTGRES_USER: concert_manager
-            POSTGRES_PASSWORD: concert_manager_local
+            POSTGRES_DB: ${DB_DATABASE}
+            POSTGRES_USER: ${DB_USERNAME}
+            POSTGRES_PASSWORD: ${DB_PASSWORD}
         volumes:
             - postgres_data:/var/lib/postgresql/data
         healthcheck:
