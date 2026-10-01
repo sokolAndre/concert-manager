@@ -4,6 +4,7 @@ namespace App\Models;
 
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\HasMany;
+use Illuminate\Database\Eloquent\Relations\BelongsToMany;
 
 class Project extends Model
 {
@@ -29,5 +30,10 @@ class Project extends Model
     public function setlists(): HasMany
     {
         return $this->hasMany(Setlist::class);
+    }
+
+    public function telegramDestinations(): BelongsToMany
+    {
+        return $this->belongsToMany(TelegramDestination::class);
     }
 }
