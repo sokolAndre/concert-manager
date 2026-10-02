@@ -34,7 +34,7 @@ class TelegramService
         return $response->json();
     }
 
-    public function getUpdates(): array
+    public function getUpdates(?int $offset = null): array
     {
         $token = config('services.telegram.bot_token');
 
@@ -42,13 +42,22 @@ class TelegramService
             throw new RuntimeException('Telegram bot token is not configured.');
         }
 
-        $response = Http::get(
-            "https://api.telegram.org/bot{$token}/getUpdates"
+        $params = [
+            'timeout' => 30,
+        ];
+
+        if ($offset !== null) {
+            $params['offset'] = $offset;
+        }
+
+        $response = Http::timeout(35)->get(
+            "https://api.telegram.org/bot{$token}/getUpdates",
+            $params
         );
 
         if ($response->failed()) {
             throw new RuntimeException(
-                'Telegram API error: ' . $response->body()
+                'Telegram API error: '.$response->body()
             );
         }
 
