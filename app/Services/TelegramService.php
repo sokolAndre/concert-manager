@@ -13,7 +13,7 @@ class TelegramService
     ): array {
         $token = config('services.telegram.bot_token');
 
-        if (!$token) {
+        if (! $token) {
             throw new RuntimeException('Telegram bot token is not configured.');
         }
 
@@ -27,7 +27,7 @@ class TelegramService
 
         if ($response->failed()) {
             throw new RuntimeException(
-                'Telegram API error: ' . $response->body()
+                'Telegram API error: '.$response->body()
             );
         }
 
@@ -38,7 +38,7 @@ class TelegramService
     {
         $token = config('services.telegram.bot_token');
 
-        if (!$token) {
+        if (! $token) {
             throw new RuntimeException('Telegram bot token is not configured.');
         }
 
@@ -63,5 +63,4 @@ class TelegramService
 
         return $response->json();
     }
-
 }

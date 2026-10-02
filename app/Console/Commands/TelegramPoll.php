@@ -2,9 +2,9 @@
 
 namespace App\Console\Commands;
 
+use App\Services\TelegramCommandHandler;
 use App\Services\TelegramService;
 use Illuminate\Console\Command;
-use App\Services\TelegramCommandHandler;
 
 class TelegramPoll extends Command
 {
@@ -28,7 +28,7 @@ class TelegramPoll extends Command
 
                 $message = $update['message'] ?? null;
 
-                if (!$message) {
+                if (! $message) {
                     continue;
                 }
 

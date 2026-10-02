@@ -12,7 +12,7 @@ class Setlist extends Model
         'project_id',
         'name',
         'description',
-        'concert_details_id'
+        'concert_details_id',
     ];
 
     public function project(): BelongsTo

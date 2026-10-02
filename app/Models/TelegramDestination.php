@@ -34,5 +34,4 @@ class TelegramDestination extends Model
     {
         return $this->hasMany(Reminder::class);
     }
-
 }

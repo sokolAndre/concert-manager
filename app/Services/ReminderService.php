@@ -20,13 +20,13 @@ class ReminderService
             );
         }
 
-        if (!$destination->is_active) {
+        if (! $destination->is_active) {
             throw new \InvalidArgumentException(
                 'Telegram destination is inactive.'
             );
         }
 
-        if (!$event->project
+        if (! $event->project
             ->telegramDestinations()
             ->whereKey($destination->id)
             ->exists()) {

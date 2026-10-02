@@ -29,7 +29,7 @@ class SendDueReminders extends Command
             $event = $reminder->event;
             $destination = $reminder->telegramDestination;
 
-            if (!$destination->is_active) {
+            if (! $destination->is_active) {
                 continue;
             }
 
@@ -42,10 +42,10 @@ class SendDueReminders extends Command
                 '',
                 $event->project->name,
                 $event->title,
-                '🕒 ' . $startsAt->format('d.m.Y H:i'),
+                '🕒 '.$startsAt->format('d.m.Y H:i'),
                 $event->venue
-                    ? '📍 ' . $event->venue->name
-                    : ($event->location ? '📍 ' . $event->location : null),
+                    ? '📍 '.$event->venue->name
+                    : ($event->location ? '📍 '.$event->location : null),
             ]));
 
             $telegram->sendMessage(
