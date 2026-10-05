@@ -26,18 +26,15 @@ class TelegramPoll extends Command
             foreach ($updates['result'] ?? [] as $update) {
                 $offset = $update['update_id'] + 1;
 
-                $message = $update['message'] ?? null;
+                if (isset($update['callback_query'])) {
+                    $handler->handleCallbackQuery($update['callback_query']);
 
-                if (! $message) {
                     continue;
                 }
 
-                $text = trim($message['text'] ?? '');
-                $chatId = $message['chat']['id'] ?? null;
-
-                $this->line("Received from {$chatId}: {$text}");
-
-                $handler->handle($message);
+                if (isset($update['message'])) {
+                    $handler->handle($update['message']);
+                }
             }
         }
     }

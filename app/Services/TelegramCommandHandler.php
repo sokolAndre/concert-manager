@@ -56,6 +56,109 @@ class TelegramCommandHandler
         };
     }
 
+    public function handleCallbackQuery(array $callbackQuery): void
+    {
+        $callbackQueryId = $callbackQuery['id'] ?? null;
+        $chatId = $callbackQuery['message']['chat']['id'] ?? null;
+        $messageId = $callbackQuery['message']['message_id'] ?? null;
+        $data = $callbackQuery['data'] ?? null;
+
+        if ($callbackQueryId !== null) {
+            $this->telegram->answerCallbackQuery($callbackQueryId);
+        }
+
+        if ($chatId === null || $data === null) {
+            return;
+        }
+
+        if ($messageId !== null) {
+            $this->telegram->removeInlineKeyboard(
+                $chatId,
+                $messageId,
+            );
+        }
+
+        if ($data === 'cancel') {
+            $this->handleCancel($chatId);
+
+            return;
+        }
+
+        if (str_starts_with($data, 'add_project:')) {
+            $projectNumber = substr($data, strlen('add_project:'));
+
+            $conversation = $this->conversations->get($chatId);
+
+            if (! $conversation || $conversation->state !== 'add_event_project') {
+                $this->telegram->sendMessage(
+                    $chatId,
+                    'This action has expired. Please start again with /add.',
+                );
+
+                return;
+            }
+
+            $this->handleAddProject(
+                $chatId,
+                $projectNumber,
+                $conversation,
+            );
+        }
+
+        if (str_starts_with($data, 'add_type:')) {
+            $type = substr($data, strlen('add_type:'));
+
+            $conversation = $this->conversations->get($chatId);
+
+            if (! $conversation || $conversation->state !== 'add_event_type') {
+                $this->telegram->sendMessage(
+                    $chatId,
+                    'This action has expired. Please start again with /add.',
+                );
+
+                return;
+            }
+
+            $typeNumbers = [
+                'concert' => '1',
+                'rehearsal' => '2',
+                'meeting' => '3',
+                'other' => '4',
+            ];
+
+            if (! isset($typeNumbers[$type])) {
+                return;
+            }
+
+            $this->handleAddEventType(
+                $chatId,
+                $typeNumbers[$type],
+                $conversation,
+            );
+        }
+
+        if ($data === 'add_save') {
+            $conversation = $this->conversations->get($chatId);
+
+            if (! $conversation || $conversation->state !== 'add_event_confirm') {
+                $this->telegram->sendMessage(
+                    $chatId,
+                    'This action has expired. Please start again with /add.',
+                );
+
+                return;
+            }
+
+            $this->handleAddEventConfirm(
+                $chatId,
+                'save',
+                $conversation,
+            );
+
+            return;
+        }
+    }
+
     private function handleStart(int|string $chatId): void
     {
         $this->telegram->sendMessage(
@@ -118,18 +221,28 @@ class TelegramCommandHandler
             ],
         );
 
-        $lines = ['Choose project:', ''];
+        $buttons = [];
 
         foreach ($projects as $index => $project) {
-            $lines[] = ($index + 1).". {$project->name}";
+            $buttons[] = [[
+                'text' => $project->name,
+                'callback_data' => 'add_project:'.($index + 1),
+            ]];
         }
 
-        $lines[] = '';
-        $lines[] = '/cancel — cancel';
+        $buttons[] = [[
+            'text' => 'Cancel',
+            'callback_data' => 'cancel',
+        ]];
 
         $this->telegram->sendMessage(
             $chatId,
-            implode("\n", $lines),
+            'Choose project:',
+            [
+                'reply_markup' => [
+                    'inline_keyboard' => $buttons,
+                ],
+            ],
         );
     }
 
@@ -280,10 +393,23 @@ class TelegramCommandHandler
             "Title: {$data['title']}\n".
             "Date: {$startsAt->format('d.m.Y')}\n".
             "Time: {$startsAt->format('H:i')}\n".
-            "Location: {$location}\n\n".
-            "Send:\n".
-            "save — create event\n".
-            '/cancel — cancel',
+            "Location: {$location}",
+            [
+                'reply_markup' => [
+                    'inline_keyboard' => [
+                        [
+                            [
+                                'text' => 'Save',
+                                'callback_data' => 'add_save',
+                            ],
+                            [
+                                'text' => 'Cancel',
+                                'callback_data' => 'cancel',
+                            ],
+                        ],
+                    ],
+                ],
+            ],
         );
     }
 
@@ -463,12 +589,39 @@ class TelegramCommandHandler
         $this->telegram->sendMessage(
             $chatId,
             "Project: {$project->name}\n\n".
-            "Choose event type:\n\n".
-            "1. Concert\n".
-            "2. Rehearsal\n".
-            "3. Meeting\n".
-            "4. Other\n\n".
-            '/cancel — cancel'
+            'Choose event type:',
+            [
+                'reply_markup' => [
+                    'inline_keyboard' => [
+                        [
+                            [
+                                'text' => 'Concert',
+                                'callback_data' => 'add_type:concert',
+                            ],
+                            [
+                                'text' => 'Rehearsal',
+                                'callback_data' => 'add_type:rehearsal',
+                            ],
+                        ],
+                        [
+                            [
+                                'text' => 'Meeting',
+                                'callback_data' => 'add_type:meeting',
+                            ],
+                            [
+                                'text' => 'Other',
+                                'callback_data' => 'add_type:other',
+                            ],
+                        ],
+                        [
+                            [
+                                'text' => 'Cancel',
+                                'callback_data' => 'cancel',
+                            ],
+                        ],
+                    ],
+                ],
+            ],
         );
     }
 
