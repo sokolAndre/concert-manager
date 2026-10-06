@@ -2,6 +2,7 @@
 
 namespace App\Services;
 
+use App\Enums\EventStatus;
 use App\Models\Event;
 use App\Models\Project;
 use App\Models\TelegramConversation;
@@ -52,8 +53,77 @@ class TelegramCommandHandler
             '/week' => $this->handleWeek($chatId),
             '/month' => $this->handleMonth($chatId),
             '/upcoming' => $this->handleUpcoming($chatId),
+            '/events' => $this->handleEvents($chatId),
             default => $this->handleUnknown($chatId),
         };
+    }
+
+    private function handleEvents(
+        int|string $chatId,
+        string $mode = 'upcoming',
+    ): void {
+        $timezone = config('app.display_timezone', 'Europe/Lisbon');
+
+        if ($mode === 'cancelled') {
+            $events = Event::query()
+                ->with(['project', 'venue'])
+                ->where('status', EventStatus::Cancelled)
+                ->orderByDesc('starts_at')
+                ->limit(20)
+                ->get();
+
+            $title = 'Cancelled events:';
+        } else {
+            $events = $this->schedule->upcoming(10);
+            $title = 'Upcoming events:';
+        }
+
+        $buttons = [
+            [
+                [
+                    'text' => $mode === 'upcoming'
+                        ? '✓ Upcoming'
+                        : 'Upcoming',
+                    'callback_data' => 'events_upcoming',
+                ],
+                [
+                    'text' => $mode === 'cancelled'
+                        ? '✓ Cancelled'
+                        : 'Cancelled',
+                    'callback_data' => 'events_cancelled',
+                ],
+            ],
+        ];
+
+        foreach ($events as $event) {
+            $startsAt = $event->starts_at
+                ->copy()
+                ->timezone($timezone);
+
+            $buttons[] = [[
+                'text' => sprintf(
+                    '%s %s — %s',
+                    $startsAt->format('d.m'),
+                    $startsAt->format('H:i'),
+                    $event->title,
+                ),
+                'callback_data' => 'event:'.$event->id,
+            ]];
+        }
+
+        $text = $events->isEmpty()
+            ? $title."\n\nNo events."
+            : $title;
+
+        $this->telegram->sendMessage(
+            $chatId,
+            $text,
+            [
+                'reply_markup' => [
+                    'inline_keyboard' => $buttons,
+                ],
+            ],
+        );
     }
 
     public function handleCallbackQuery(array $callbackQuery): void
@@ -63,19 +133,29 @@ class TelegramCommandHandler
         $messageId = $callbackQuery['message']['message_id'] ?? null;
         $data = $callbackQuery['data'] ?? null;
 
-        if ($callbackQueryId !== null) {
-            $this->telegram->answerCallbackQuery($callbackQueryId);
+        if ($callbackQueryId) {
+            try {
+                $this->telegram->answerCallbackQuery(
+                    $callbackQueryId,
+                );
+            } catch (Throwable $exception) {
+                report($exception);
+            }
         }
 
         if ($chatId === null || $data === null) {
             return;
         }
 
-        if ($messageId !== null) {
-            $this->telegram->removeInlineKeyboard(
-                $chatId,
-                $messageId,
-            );
+        if ($messageId) {
+            try {
+                $this->telegram->removeInlineKeyboard(
+                    $chatId,
+                    $messageId,
+                );
+            } catch (Throwable $exception) {
+                report($exception);
+            }
         }
 
         if ($data === 'cancel') {
@@ -157,6 +237,415 @@ class TelegramCommandHandler
 
             return;
         }
+
+        if (str_starts_with($data, 'event:')) {
+            $eventId = substr($data, strlen('event:'));
+
+            if (! ctype_digit($eventId)) {
+                return;
+            }
+
+            $event = Event::with(['project', 'venue'])->find($eventId);
+
+            if (! $event) {
+                $this->telegram->sendMessage(
+                    $chatId,
+                    'This event no longer exists.',
+                );
+
+                return;
+            }
+
+            $this->showEvent($chatId, $event);
+
+            return;
+        }
+
+        if ($data === 'events_upcoming') {
+            $this->handleEvents(
+                $chatId,
+                'upcoming',
+            );
+
+            return;
+        }
+
+        if ($data === 'events_cancelled') {
+            $this->handleEvents(
+                $chatId,
+                'cancelled',
+            );
+
+            return;
+        }
+
+        if ($data === 'events_back') {
+            $this->handleEvents($chatId);
+
+            return;
+        }
+
+        if (str_starts_with($data, 'event_cancel_confirm:')) {
+            $eventId = substr(
+                $data,
+                strlen('event_cancel_confirm:'),
+            );
+
+            if (! ctype_digit($eventId)) {
+                return;
+            }
+
+            $event = Event::find($eventId);
+
+            if (! $event) {
+                $this->telegram->sendMessage(
+                    $chatId,
+                    'This event no longer exists.',
+                );
+
+                return;
+            }
+
+            $event->update([
+                'status' => EventStatus::Cancelled,
+            ]);
+
+            $this->telegram->sendMessage(
+                $chatId,
+                "Event cancelled.\n\n".
+                "{$event->title}",
+                [
+                    'reply_markup' => [
+                        'inline_keyboard' => [
+                            [
+                                [
+                                    'text' => 'Back to events',
+                                    'callback_data' => 'events_back',
+                                ],
+                            ],
+                        ],
+                    ],
+                ],
+            );
+
+            return;
+        }
+
+        if (str_starts_with($data, 'event_cancel:')) {
+            $eventId = substr($data, strlen('event_cancel:'));
+
+            if (! ctype_digit($eventId)) {
+                return;
+            }
+
+            $event = Event::with(['project', 'venue'])->find($eventId);
+
+            if (! $event) {
+                $this->telegram->sendMessage(
+                    $chatId,
+                    'This event no longer exists.',
+                );
+
+                return;
+            }
+
+            $this->showCancelEventConfirmation(
+                $chatId,
+                $event,
+            );
+
+            return;
+        }
+
+        if (str_starts_with($data, 'event_delete_confirm:')) {
+            $eventId = substr(
+                $data,
+                strlen('event_delete_confirm:'),
+            );
+
+            if (! ctype_digit($eventId)) {
+                return;
+            }
+
+            $event = Event::find($eventId);
+
+            if (! $event) {
+                $this->telegram->sendMessage(
+                    $chatId,
+                    'This event no longer exists.',
+                );
+
+                return;
+            }
+
+            $title = $event->title;
+            $wasCancelled = $event->status === EventStatus::Cancelled;
+
+            $event->delete();
+
+            $this->telegram->sendMessage(
+                $chatId,
+                "Event deleted.\n\n{$title}",
+                [
+                    'reply_markup' => [
+                        'inline_keyboard' => [
+                            [
+                                [
+                                    'text' => 'Back to events',
+                                    'callback_data' => $wasCancelled
+                                        ? 'events_cancelled'
+                                        : 'events_upcoming',
+                                ],
+                            ],
+                        ],
+                    ],
+                ],
+            );
+
+            return;
+        }
+
+        if (str_starts_with($data, 'event_delete:')) {
+            $eventId = substr(
+                $data,
+                strlen('event_delete:'),
+            );
+
+            if (! ctype_digit($eventId)) {
+                return;
+            }
+
+            $event = Event::with('project')->find($eventId);
+
+            if (! $event) {
+                $this->telegram->sendMessage(
+                    $chatId,
+                    'This event no longer exists.',
+                );
+
+                return;
+            }
+
+            $this->showDeleteEventConfirmation(
+                $chatId,
+                $event,
+            );
+
+            return;
+        }
+
+        if (str_starts_with($data, 'event_restore:')) {
+            $eventId = substr(
+                $data,
+                strlen('event_restore:'),
+            );
+
+            if (! ctype_digit($eventId)) {
+                return;
+            }
+
+            $event = Event::find($eventId);
+
+            if (! $event) {
+                $this->telegram->sendMessage(
+                    $chatId,
+                    'This event no longer exists.',
+                );
+
+                return;
+            }
+
+            if ($event->status !== EventStatus::Cancelled) {
+                $this->telegram->sendMessage(
+                    $chatId,
+                    'This event is not cancelled.',
+                );
+
+                return;
+            }
+
+            $event->update([
+                'status' => EventStatus::Planned,
+            ]);
+
+            $this->telegram->sendMessage(
+                $chatId,
+                "Event restored.\n\n{$event->title}",
+                [
+                    'reply_markup' => [
+                        'inline_keyboard' => [
+                            [
+                                [
+                                    'text' => 'View event',
+                                    'callback_data' => 'event:'.$event->id,
+                                ],
+                            ],
+                            [
+                                [
+                                    'text' => 'Back to events',
+                                    'callback_data' => 'events_upcoming',
+                                ],
+                            ],
+                        ],
+                    ],
+                ],
+            );
+
+            return;
+        }
+    }
+
+    private function showDeleteEventConfirmation(
+        int|string $chatId,
+        Event $event,
+    ): void {
+        $timezone = config('app.display_timezone', 'Europe/Lisbon');
+
+        $startsAt = $event->starts_at
+            ->copy()
+            ->timezone($timezone);
+
+        $this->telegram->sendMessage(
+            $chatId,
+            "Delete this event permanently?\n\n".
+            "{$startsAt->format('d.m.Y H:i')} — {$event->title}\n".
+            "{$event->project->name}\n\n".
+            'This action cannot be undone.',
+            [
+                'reply_markup' => [
+                    'inline_keyboard' => [
+                        [
+                            [
+                                'text' => 'Yes, delete',
+                                'callback_data' => 'event_delete_confirm:'.$event->id,
+                            ],
+                        ],
+                        [
+                            [
+                                'text' => 'Back',
+                                'callback_data' => 'event:'.$event->id,
+                            ],
+                        ],
+                    ],
+                ],
+            ],
+        );
+    }
+
+    private function showCancelEventConfirmation(
+        int|string $chatId,
+        Event $event,
+    ): void {
+        $timezone = config('app.display_timezone', 'Europe/Lisbon');
+
+        $startsAt = $event->starts_at
+            ->copy()
+            ->timezone($timezone);
+
+        $this->telegram->sendMessage(
+            $chatId,
+            "Cancel this event?\n\n".
+            "{$startsAt->format('d.m.Y H:i')} — {$event->title}\n".
+            $event->project->name,
+            [
+                'reply_markup' => [
+                    'inline_keyboard' => [
+                        [
+                            [
+                                'text' => 'Yes, cancel event',
+                                'callback_data' => 'event_cancel_confirm:'.$event->id,
+                            ],
+                        ],
+                        [
+                            [
+                                'text' => 'Back',
+                                'callback_data' => 'event:'.$event->id,
+                            ],
+                        ],
+                    ],
+                ],
+            ],
+        );
+    }
+
+    private function showEvent(
+        int|string $chatId,
+        Event $event,
+    ): void {
+        $timezone = config('app.display_timezone', 'Europe/Lisbon');
+
+        $startsAt = $event->starts_at
+            ->copy()
+            ->timezone($timezone);
+
+        $location = $event->venue?->name
+        ?? $event->location
+        ?? '—';
+
+        $text = "Event\n\n".
+            "Project: {$event->project->name}\n".
+            'Type: '.ucfirst($event->type->value)."\n".
+            "Title: {$event->title}\n".
+            'Date: '.$startsAt->format('d.m.Y')."\n".
+            'Time: '.$startsAt->format('H:i')."\n".
+            "Location: {$location}\n".
+            'Status: '.ucfirst($event->status->value);
+
+        if ($event->status === EventStatus::Cancelled) {
+            $buttons = [
+                [
+                    [
+                        'text' => 'Restore',
+                        'callback_data' => 'event_restore:'.$event->id,
+                    ],
+                    [
+                        'text' => 'Delete',
+                        'callback_data' => 'event_delete:'.$event->id,
+                    ],
+                ],
+                [
+                    [
+                        'text' => 'Back',
+                        'callback_data' => 'events_cancelled',
+                    ],
+                ],
+            ];
+        } else {
+            $buttons = [
+                [
+                    [
+                        'text' => 'Edit',
+                        'callback_data' => 'event_edit:'.$event->id,
+                    ],
+                    [
+                        'text' => 'Cancel event',
+                        'callback_data' => 'event_cancel:'.$event->id,
+                    ],
+                ],
+                [
+                    [
+                        'text' => 'Delete',
+                        'callback_data' => 'event_delete:'.$event->id,
+                    ],
+                ],
+                [
+                    [
+                        'text' => 'Back',
+                        'callback_data' => 'events_upcoming',
+                    ],
+                ],
+            ];
+        }
+
+        $this->telegram->sendMessage(
+            $chatId,
+            $text,
+            [
+                'reply_markup' => [
+                    'inline_keyboard' => $buttons,
+                ],
+            ],
+        );
     }
 
     private function handleStart(int|string $chatId): void
@@ -170,6 +659,7 @@ class TelegramCommandHandler
             "/month — this month\n".
             "/upcoming — upcoming events\n".
             "/add — add event\n".
+            "/events — manage upcoming events\n".
             '/start — show commands'
         );
     }

@@ -5,6 +5,7 @@ namespace App\Console\Commands;
 use App\Services\TelegramCommandHandler;
 use App\Services\TelegramService;
 use Illuminate\Console\Command;
+use Throwable;
 
 class TelegramPoll extends Command
 {
@@ -21,20 +22,32 @@ class TelegramPoll extends Command
         $offset = null;
 
         while (true) {
-            $updates = $telegram->getUpdates($offset);
+            try {
+                $updates = $telegram->getUpdates($offset);
 
-            foreach ($updates['result'] ?? [] as $update) {
-                $offset = $update['update_id'] + 1;
+                foreach ($updates['result'] ?? [] as $update) {
+                    $offset = $update['update_id'] + 1;
 
-                if (isset($update['callback_query'])) {
-                    $handler->handleCallbackQuery($update['callback_query']);
+                    if (isset($update['callback_query'])) {
+                        $handler->handleCallbackQuery(
+                            $update['callback_query'],
+                        );
 
-                    continue;
+                        continue;
+                    }
+
+                    if (isset($update['message'])) {
+                        $handler->handle(
+                            $update['message'],
+                        );
+                    }
                 }
+            } catch (Throwable $exception) {
+                $this->error(
+                    'Telegram polling error: '.$exception->getMessage(),
+                );
 
-                if (isset($update['message'])) {
-                    $handler->handle($update['message']);
-                }
+                sleep(5);
             }
         }
     }
