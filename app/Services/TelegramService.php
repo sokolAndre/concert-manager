@@ -35,6 +35,36 @@ class TelegramService
         return $response->json();
     }
 
+    public function editMessageText(
+        int|string $chatId,
+        int $messageId,
+        string $text,
+        array $options = [],
+    ): array {
+        $token = config('services.telegram.bot_token');
+
+        if (! $token) {
+            throw new RuntimeException('Telegram bot token is not configured.');
+        }
+
+        $response = Http::post(
+            "https://api.telegram.org/bot{$token}/editMessageText",
+            array_merge([
+                'chat_id' => $chatId,
+                'message_id' => $messageId,
+                'text' => $text,
+            ], $options),
+        );
+
+        if ($response->failed()) {
+            throw new RuntimeException(
+                'Telegram API error: '.$response->body(),
+            );
+        }
+
+        return $response->json();
+    }
+
     public function getUpdates(?int $offset = null): array
     {
         $token = config('services.telegram.bot_token');

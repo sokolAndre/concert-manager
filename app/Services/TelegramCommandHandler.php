@@ -149,10 +149,15 @@ class TelegramCommandHandler
 
         if ($messageId) {
             try {
-                $this->telegram->removeInlineKeyboard(
-                    $chatId,
-                    $messageId,
-                );
+                if (
+                    $messageId
+                    && ! str_starts_with($data, 'month:')
+                ) {
+                    $this->telegram->removeInlineKeyboard(
+                        $chatId,
+                        $messageId,
+                    );
+                }
             } catch (Throwable $exception) {
                 report($exception);
             }
@@ -489,6 +494,39 @@ class TelegramCommandHandler
                         ],
                     ],
                 ],
+            );
+
+            return;
+        }
+
+        if (str_starts_with($data, 'month:')) {
+            $value = substr(
+                $data,
+                strlen('month:'),
+            );
+
+            if (! preg_match('/^\d{4}-\d{2}$/', $value)) {
+                return;
+            }
+
+            [$year, $month] = array_map(
+                'intval',
+                explode('-', $value),
+            );
+
+            if ($month < 1 || $month > 12) {
+                return;
+            }
+
+            if (! $messageId) {
+                return;
+            }
+
+            $this->handleMonth(
+                $chatId,
+                $year,
+                $month,
+                $messageId,
             );
 
             return;
@@ -1197,20 +1235,89 @@ class TelegramCommandHandler
         );
     }
 
-    private function handleMonth(int|string $chatId): void
-    {
+    private function handleMonth(
+        int|string $chatId,
+        ?int $year = null,
+        ?int $month = null,
+        ?int $messageId = null,
+    ): void {
         $timezone = config('app.display_timezone', 'Europe/Lisbon');
-        $now = now($timezone);
 
-        $events = $this->schedule->between(
-            $now->copy()->startOfMonth(),
-            $now->copy()->endOfMonth(),
-        );
+        $date = now($timezone);
 
-        $this->sendSchedule(
+        if ($year !== null && $month !== null) {
+            $date = $date->copy()
+                ->year($year)
+                ->month($month)
+                ->startOfMonth();
+        }
+
+        $from = $date->copy()->startOfMonth()->utc();
+        $to = $date->copy()->endOfMonth()->utc();
+
+        $events = $this->schedule->between($from, $to);
+
+        $text = $date->format('F Y');
+
+        if ($events->isEmpty()) {
+            $text .= "\n\nNo events.";
+        } else {
+            foreach ($events as $event) {
+                $startsAt = $event->starts_at
+                    ->copy()
+                    ->timezone($timezone);
+
+                $text .= "\n\n".
+                    $startsAt->format('d.m.Y H:i').
+                    " — {$event->title}\n".
+                    $event->project->name;
+
+                $location = $event->venue?->name
+                ?? $event->location;
+
+                if ($location) {
+                    $text .= "\n📍 {$location}";
+                }
+            }
+        }
+
+        $previousMonth = $date->copy()->subMonth();
+        $nextMonth = $date->copy()->addMonth();
+
+        $options = [
+            'reply_markup' => [
+                'inline_keyboard' => [
+                    [
+                        [
+                            'text' => '← '.$previousMonth->format('F'),
+                            'callback_data' => 'month:'.
+                                $previousMonth->format('Y-m'),
+                        ],
+                        [
+                            'text' => $nextMonth->format('F').' →',
+                            'callback_data' => 'month:'.
+                                $nextMonth->format('Y-m'),
+                        ],
+                    ],
+                ],
+            ],
+        ];
+
+        if ($messageId !== null) {
+            $this->telegram->editMessageText(
+                $chatId,
+                $messageId,
+                $text,
+                $options,
+            );
+
+            return;
+        }
+
+        $this->telegram->sendMessage(
             $chatId,
-            $now->format('F Y'),
-            $events,
+            $text,
+            $options,
         );
     }
 
