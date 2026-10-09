@@ -12,6 +12,8 @@ use Throwable;
 
 class TelegramCommandHandler
 {
+    private const EVENTS_PER_PAGE = 10;
+
     public function __construct(
         private readonly TelegramService $telegram,
         private readonly ScheduleService $schedule,
@@ -61,6 +63,8 @@ class TelegramCommandHandler
     private function handleEvents(
         int|string $chatId,
         string $mode = 'upcoming',
+        int $page = 0,
+        ?int $messageId = null,
     ): void {
         $timezone = config('app.display_timezone', 'Europe/Lisbon');
 
@@ -74,7 +78,19 @@ class TelegramCommandHandler
 
             $title = 'Cancelled events:';
         } else {
-            $events = $this->schedule->upcoming(10);
+            $offset = $page * self::EVENTS_PER_PAGE;
+
+            $events = $this->schedule->upcoming(
+                self::EVENTS_PER_PAGE + 1,
+                $offset,
+            );
+
+            $hasNext = $events->count() > self::EVENTS_PER_PAGE;
+
+            if ($hasNext) {
+                $events = $events->take(self::EVENTS_PER_PAGE);
+            }
+
             $title = 'Upcoming events:';
         }
 
@@ -111,18 +127,53 @@ class TelegramCommandHandler
             ]];
         }
 
+        if ($mode === 'upcoming') {
+            $paginationButtons = [];
+
+            if ($page > 0) {
+                $paginationButtons[] = [
+                    'text' => '← Previous',
+                    'callback_data' => 'events_upcoming_page:'.($page - 1),
+                ];
+            }
+
+            if ($hasNext) {
+                $paginationButtons[] = [
+                    'text' => 'Next →',
+                    'callback_data' => 'events_upcoming_page:'.($page + 1),
+                ];
+            }
+
+            if ($paginationButtons !== []) {
+                $buttons[] = $paginationButtons;
+            }
+        }
+
         $text = $events->isEmpty()
             ? $title."\n\nNo events."
             : $title;
 
+        $options = [
+            'reply_markup' => [
+                'inline_keyboard' => $buttons,
+            ],
+        ];
+
+        if ($messageId !== null) {
+            $this->telegram->editMessageText(
+                $chatId,
+                $messageId,
+                $text,
+                $options,
+            );
+
+            return;
+        }
+
         $this->telegram->sendMessage(
             $chatId,
             $text,
-            [
-                'reply_markup' => [
-                    'inline_keyboard' => $buttons,
-                ],
-            ],
+            $options,
         );
     }
 
@@ -152,6 +203,7 @@ class TelegramCommandHandler
                 if (
                     $messageId
                     && ! str_starts_with($data, 'month:')
+                    && ! str_starts_with($data, 'events_upcoming_page:')
                 ) {
                     $this->telegram->removeInlineKeyboard(
                         $chatId,
@@ -262,6 +314,30 @@ class TelegramCommandHandler
             }
 
             $this->showEvent($chatId, $event);
+
+            return;
+        }
+
+        if (str_starts_with($data, 'events_upcoming_page:')) {
+            $page = substr(
+                $data,
+                strlen('events_upcoming_page:'),
+            );
+
+            if (! ctype_digit($page)) {
+                return;
+            }
+
+            if (! $messageId) {
+                return;
+            }
+
+            $this->handleEvents(
+                $chatId,
+                'upcoming',
+                (int) $page,
+                $messageId,
+            );
 
             return;
         }
