@@ -37,9 +37,15 @@ class TelegramPoll extends Command
                     }
 
                     if (isset($update['message'])) {
-                        $handler->handle(
-                            $update['message'],
+                        $message = $update['message'];
+
+                        $this->info(
+                            'Chat ID: '.($message['chat']['id'] ?? 'unknown').
+                            ' | Type: '.($message['chat']['type'] ?? 'unknown').
+                            ' | Title: '.($message['chat']['title'] ?? 'private')
                         );
+
+                        $handler->handle($message);
                     }
                 }
             } catch (Throwable $exception) {
