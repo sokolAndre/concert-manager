@@ -29,6 +29,18 @@ class TelegramCommandHandler
             return;
         }
 
+        if (preg_match(
+            '/^\/([a-z_]+)@([a-zA-Z0-9_]+)$/i',
+            $text,
+            $matches,
+        )) {
+            if (strcasecmp($matches[2], 'ConcertManagerAppBot') !== 0) {
+                return;
+            }
+
+            $text = '/'.strtolower($matches[1]);
+        }
+
         if ($text === '/cancel') {
             $this->handleCancel($chatId);
 
