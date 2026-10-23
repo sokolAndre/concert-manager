@@ -6,6 +6,7 @@ use App\Enums\EventStatus;
 use App\Models\Event;
 use App\Models\Project;
 use App\Models\TelegramConversation;
+use App\Models\TelegramDestination;
 use Carbon\Carbon;
 use Illuminate\Database\Eloquent\Collection;
 use Throwable;
@@ -20,6 +21,31 @@ class TelegramCommandHandler
         private readonly TelegramConversationService $conversations,
     ) {}
 
+    private function projectIdsForChat(int|string $chatId): ?array
+    {
+        $destination = TelegramDestination::query()
+            ->where('telegram_chat_id', $chatId)
+            ->where('is_active', true)
+            ->first();
+
+        if (! $destination) {
+            return [];
+        }
+
+        if ($destination->type->value === 'private') {
+            return null;
+        }
+
+        return $destination->projects()
+            ->pluck('projects.id')
+            ->all();
+    }
+
+    private function isGroupChat(int|string $chatId): bool
+    {
+        return (int) $chatId < 0;
+    }
+
     public function handle(array $message): void
     {
         $chatId = $message['chat']['id'] ?? null;
@@ -29,11 +55,23 @@ class TelegramCommandHandler
             return;
         }
 
-        if (preg_match(
-            '/^\/([a-z_]+)@([a-zA-Z0-9_]+)$/i',
-            $text,
-            $matches,
-        )) {
+        if (
+            $this->isGroupChat($chatId)
+            && in_array(
+                explode('@', explode(' ', $text)[0])[0],
+                ['/add', '/events', '/cancel'],
+                true,
+            )
+        ) {
+            $this->telegram->sendMessage(
+                $chatId,
+                'Event management is available only in private chat.',
+            );
+
+            return;
+        }
+
+        if (preg_match('/^\/([a-z_]+)@([a-zA-Z0-9_]+)$/i', $text, $matches)) {
             if (strcasecmp($matches[2], 'ConcertManagerAppBot') !== 0) {
                 return;
             }
@@ -49,6 +87,27 @@ class TelegramCommandHandler
 
         if ($text === '/add') {
             $this->handleAdd($chatId);
+
+            return;
+        }
+
+        // Never resume a stateful event-management conversation in a group.
+        if ($this->isGroupChat($chatId)) {
+            if (! in_array(
+                $text,
+                ['/start', '/today', '/week', '/month', '/upcoming'],
+                true,
+            )) {
+                return;
+            }
+
+            match ($text) {
+                '/start' => $this->handleStart($chatId),
+                '/today' => $this->handleToday($chatId),
+                '/week' => $this->handleWeek($chatId),
+                '/month' => $this->handleMonth($chatId),
+                '/upcoming' => $this->handleUpcoming($chatId),
+            };
 
             return;
         }
@@ -207,6 +266,14 @@ class TelegramCommandHandler
         }
 
         if ($chatId === null || $data === null) {
+            return;
+        }
+
+        // Groups are read-only: only month navigation is permitted.
+        if (
+            $this->isGroupChat($chatId)
+            && preg_match('/^month:\d{4}-(0[1-9]|1[0-2])$/', $data) !== 1
+        ) {
             return;
         }
 
@@ -1293,6 +1360,7 @@ class TelegramCommandHandler
         $events = $this->schedule->between(
             $now->copy()->startOfDay(),
             $now->copy()->endOfDay(),
+            $this->projectIdsForChat($chatId),
         );
 
         $this->sendSchedule(
@@ -1310,7 +1378,11 @@ class TelegramCommandHandler
         $from = $now->copy()->startOfWeek();
         $to = $now->copy()->endOfWeek();
 
-        $events = $this->schedule->between($from, $to);
+        $events = $this->schedule->between(
+            $from,
+            $to,
+            $this->projectIdsForChat($chatId),
+        );
 
         $this->sendSchedule(
             $chatId,
@@ -1343,7 +1415,11 @@ class TelegramCommandHandler
         $from = $date->copy()->startOfMonth()->utc();
         $to = $date->copy()->endOfMonth()->utc();
 
-        $events = $this->schedule->between($from, $to);
+        $events = $this->schedule->between(
+            $from,
+            $to,
+            $this->projectIdsForChat($chatId),
+        );
 
         $text = $date->format('F Y');
 
@@ -1411,7 +1487,11 @@ class TelegramCommandHandler
 
     private function handleUpcoming(int|string $chatId): void
     {
-        $events = $this->schedule->upcoming();
+        $events = $this->schedule->upcoming(
+            20,
+            0,
+            $this->projectIdsForChat($chatId),
+        );
 
         $this->sendSchedule(
             $chatId,

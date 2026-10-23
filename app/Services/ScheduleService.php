@@ -11,6 +11,7 @@ class ScheduleService
     public function between(
         CarbonInterface $from,
         CarbonInterface $to,
+        ?array $projectIds = null,
     ): Collection {
         return Event::query()
             ->with(['project', 'venue'])
@@ -18,6 +19,10 @@ class ScheduleService
                 $from->copy()->utc(),
                 $to->copy()->utc(),
             ])
+            ->when(
+                $projectIds !== null,
+                fn ($query) => $query->whereIn('project_id', $projectIds),
+            )
             ->where('status', '!=', 'cancelled')
             ->orderBy('starts_at')
             ->get();
@@ -26,10 +31,15 @@ class ScheduleService
     public function upcoming(
         int $limit,
         int $offset = 0,
+        ?array $projectIds = null,
     ): Collection {
         return Event::query()
             ->with(['project', 'venue'])
             ->where('starts_at', '>=', now())
+            ->when(
+                $projectIds !== null,
+                fn ($query) => $query->whereIn('project_id', $projectIds),
+            )
             ->where('status', '!=', 'cancelled')
             ->orderBy('starts_at')
             ->offset($offset)
