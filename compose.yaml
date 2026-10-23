@@ -10,6 +10,19 @@ services:
             db:
                 condition: service_healthy
 
+    telegram-poller:
+        build:
+            context: .
+            dockerfile: Dockerfile
+        working_dir: /var/www/html
+        volumes:
+            - .:/var/www/html
+        command: php artisan telegram:poll
+        restart: unless-stopped
+        depends_on:
+            db:
+                condition: service_healthy
+
     nginx:
         image: nginx:alpine
         ports:
