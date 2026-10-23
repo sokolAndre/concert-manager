@@ -1,58 +1,97 @@
-<p align="center"><a href="https://laravel.com" target="_blank"><img src="https://raw.githubusercontent.com/laravel/art/master/logo-lockup/5%20SVG/2%20CMYK/1%20Full%20Color/laravel-logolockup-cmyk-red.svg" width="400" alt="Laravel Logo"></a></p>
+# Concert Manager
 
-<p align="center">
-<a href="https://github.com/laravel/framework/actions"><img src="https://github.com/laravel/framework/workflows/tests/badge.svg" alt="Build Status"></a>
-<a href="https://packagist.org/packages/laravel/framework"><img src="https://img.shields.io/packagist/dt/laravel/framework" alt="Total Downloads"></a>
-<a href="https://packagist.org/packages/laravel/framework"><img src="https://img.shields.io/packagist/v/laravel/framework" alt="Latest Stable Version"></a>
-<a href="https://packagist.org/packages/laravel/framework"><img src="https://img.shields.io/packagist/l/laravel/framework" alt="License"></a>
-</p>
+**Concert Manager** is an event and performance management application for musicians, bands, and small ensembles, built with Laravel, PostgreSQL, and the Telegram Bot API.
 
-## About Laravel
+The goal is to keep concert schedules, rehearsals, venues, setlists, reminders, and performance finances in one place—across multiple musical projects.
 
-Laravel is a web application framework with expressive, elegant syntax. We believe development must be an enjoyable and creative experience to be truly fulfilling. Laravel takes the pain out of development by easing common tasks used in many web projects, such as:
+> **Project status:** Active development. The Telegram calendar and core event workflows are working; some financial and setlist features are currently available at the backend/domain level only.
 
-- [Simple, fast routing engine](https://laravel.com/docs/routing).
-- [Powerful dependency injection container](https://laravel.com/docs/container).
-- Multiple back-ends for [session](https://laravel.com/docs/session) and [cache](https://laravel.com/docs/cache) storage.
-- Expressive, intuitive [database ORM](https://laravel.com/docs/eloquent).
-- Database agnostic [schema migrations](https://laravel.com/docs/migrations).
-- [Robust background job processing](https://laravel.com/docs/queues).
-- [Real-time event broadcasting](https://laravel.com/docs/broadcasting).
+## Features
 
-Laravel is accessible, powerful, and provides tools required for large, robust applications.
+### Available through Telegram
 
-## Learning Laravel
+- **Unified calendar** across multiple musical projects
+- **Schedule commands** for today, this week, this month, and upcoming events
+- **Interactive monthly navigation** with previous/next month buttons, updating the same message
+- **Paginated upcoming events** with previous/next navigation
+- **Guided event creation** using conversation state and inline buttons
+- **Event details and management:** view, cancel, restore, and permanently delete with confirmation
+- **Event categories:** concerts, rehearsals, meetings, and other activities
 
-Laravel has the most extensive and thorough [documentation](https://laravel.com/docs) and video tutorial library of all modern web application frameworks, making it a breeze to get started with the framework.
+### Implemented in the backend
 
-In addition, [Laracasts](https://laracasts.com) contains thousands of video tutorials on a range of topics including Laravel, modern PHP, unit testing, and JavaScript. Boost your skills by digging into our comprehensive video library.
+- **Concert finances:** agreed fees, multiple payments, outstanding balances, and payment status
+- **Setlists:** song catalog, ordered sets, reusable templates, and concert-specific copies
+- **Venues and contacts:** structured information associated with events
+- **Reminders:** scheduled notifications to Telegram destinations, with Laravel scheduler integration
+- **Project-to-chat associations** for private and group Telegram destinations
 
-You can also watch bite-sized lessons with real-world projects on [Laravel Learn](https://laravel.com/learn), where you will be guided through building a Laravel application from scratch while learning PHP fundamentals.
+## Tech Stack
 
-## Agentic Development
+| Component | Technology |
+| --- | --- |
+| Backend | PHP 8.4, Laravel 13 |
+| Database | PostgreSQL 17 |
+| Bot | Telegram Bot API (long polling, inline keyboards) |
+| Web server | Nginx, PHP-FPM |
+| Infrastructure | Docker Compose, Ubuntu 24.04 VPS |
+| Scheduling | Laravel Artisan commands and scheduler |
 
-Laravel's predictable structure and conventions make it ideal for AI coding agents like Claude Code, Cursor, and GitHub Copilot. Install [Laravel Boost](https://laravel.com/docs/ai) to supercharge your AI workflow:
+## Architecture
+
+The application models multiple **Projects**, each containing **Events**. Concerts can have additional **Concert Details**, including fees and **Payments**. **Setlists** organize songs into ordered sets and can be copied for individual concerts. **Reminders** connect events to Telegram destinations and scheduled notification times.
+
+The Telegram interface uses database-backed conversation state for multi-step actions and callback queries for interactive navigation.
+
+**Time zones:** Dates are stored in UTC and presented in a configurable local timezone (`Europe/Lisbon` by default).
+
+## Running Locally
+
+The project uses Docker Compose. You will need Docker and Docker Compose installed.
 
 ```bash
-composer require laravel/boost --dev
-
-php artisan boost:install
+git clone https://github.com/sokolAndre/concert-manager.git
+cd concert-manager
+cp .env.example .env
 ```
 
-Boost provides your agent 15+ tools and skills that help agents build Laravel applications while following best practices.
+Set the database credentials and `TELEGRAM_BOT_TOKEN` in `.env`. Then run:
 
-## Contributing
+```bash
+docker compose up -d --build
+docker compose exec app composer install
+docker compose exec app php artisan key:generate
+docker compose exec app php artisan migrate
+```
 
-Thank you for considering contributing to the Laravel framework! The contribution guide can be found in the [Laravel documentation](https://laravel.com/docs/contributions).
+To run the Telegram bot during development:
 
-## Code of Conduct
+```bash
+docker compose exec app php artisan telegram:poll
+```
 
-In order to ensure that the Laravel community is welcoming to all, please review and abide by the [Code of Conduct](https://laravel.com/docs/contributions#code-of-conduct).
+**Important:** Run only one polling process for a bot token at a time. Multiple concurrent `getUpdates` consumers cause Telegram API `409 Conflict` errors.
 
-## Security Vulnerabilities
+> Local setup may require environment-specific permissions or configuration. Never commit your `.env` file or Telegram bot token.
 
-If you discover a security vulnerability within Laravel, please send an e-mail to Taylor Otwell via [taylor@laravel.com](mailto:taylor@laravel.com). All security vulnerabilities will be promptly addressed.
+## Deployment Status
 
-## License
+A Docker-based deployment baseline is configured on an Ubuntu VPS, including PostgreSQL, Nginx, and scheduled reminder execution. Persistent production Telegram polling is planned; the bot is currently operated through a development polling process.
 
-The Laravel framework is open-sourced software licensed under the [MIT license](https://opensource.org/licenses/MIT).
+## Roadmap
+
+- [x] Multi-project event model
+- [x] Telegram event creation and event cards
+- [x] Cancel, restore, and delete workflows
+- [x] Interactive monthly calendar
+- [x] Pagination for upcoming events
+- [x] Backend models for payments, setlists, and reminders
+- [ ] Edit event fields through Telegram
+- [ ] Telegram workflows for payments and setlists
+- [ ] Persistent production polling worker
+- [ ] Automated tests and improved operational resilience
+- [ ] Web administration interface
+
+## Contributing and License
+
+The project is under active development. Contribution guidelines and an open-source license have not yet been added. Until a license is published, the repository's source code should not be assumed to grant reuse or redistribution rights.
